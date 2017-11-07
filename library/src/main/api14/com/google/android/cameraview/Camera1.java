@@ -17,12 +17,15 @@
 package com.google.android.cameraview;
 
 import android.annotation.SuppressLint;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.os.Build;
 import android.support.v4.util.SparseArrayCompat;
 import android.view.SurfaceHolder;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Set;
@@ -125,7 +128,14 @@ class Camera1 extends CameraViewImpl {
             mCamera.setPreviewCallback(new Camera.PreviewCallback() {
                 @Override
                 public void onPreviewFrame(byte[] data, Camera camera) {
-                    mCallback.onPreviewFrame(data);
+                    Camera.Parameters parameters = camera.getParameters();
+                    Camera.Size size = parameters.getPreviewSize();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    YuvImage image = new YuvImage(data, parameters.getPreviewFormat(),
+                            size.width, size.height, null);
+                    image.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()),
+                            100, baos);
+                    mCallback.onPreviewFrame(baos.toByteArray());
                 }
             });
         } catch (IOException e) {

@@ -30,6 +30,8 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.SparseIntArray;
@@ -64,6 +66,8 @@ class Camera2 extends CameraViewImpl {
     private static final int MAX_PREVIEW_HEIGHT = 1080;
 
     private final CameraManager mCameraManager;
+    private HandlerThread mHandlerThread;
+    private Handler mHandler;
 
     private final CameraDevice.StateCallback mCameraDeviceCallback
             = new CameraDevice.StateCallback() {
@@ -175,12 +179,14 @@ class Camera2 extends CameraViewImpl {
         @Override
         public void onImageAvailable(ImageReader reader) {
             try (Image image = reader.acquireLatestImage()) {
-                Image.Plane[] planes = image.getPlanes();
-                if (planes.length > 0) {
-                    ByteBuffer buffer = planes[0].getBuffer();
-                    byte[] data = new byte[buffer.remaining()];
-                    buffer.get(data);
-                    mCallback.onPreviewFrame(data);
+                final byte[] bytes = ImageUtil.imageToByteArray(image);
+                if (bytes != null) {
+                    mHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            mCallback.onPreviewFrame(bytes);
+                        }
+                    });
                 }
             }
         }
@@ -232,6 +238,7 @@ class Camera2 extends CameraViewImpl {
         if (!chooseCameraIdByFacing()) {
             return false;
         }
+        prepareHandler();
         collectCameraInfo();
         prepareImageReader();
         startOpeningCamera();
@@ -371,6 +378,12 @@ class Camera2 extends CameraViewImpl {
         mPreview.setDisplayOrientation(mDisplayOrientation);
     }
 
+    private void prepareHandler() {
+        mHandlerThread = new HandlerThread(TAG);
+        mHandlerThread.start();
+        mHandler = new Handler(mHandlerThread.getLooper());
+    }
+
     /**
      * <p>Chooses a camera ID by the specified camera facing ({@link #mFacing}).</p>
      * <p>This rewrites {@link #mCameraId}, {@link #mCameraCharacteristics}, and optionally
@@ -480,9 +493,9 @@ class Camera2 extends CameraViewImpl {
             mPreviewReader.close();
         }
         mPreviewReader = ImageReader.newInstance(
-                largest.getWidth() / 16, largest.getHeight() / 16,
+                largest.getWidth() / 4, largest.getHeight() / 4,
                 ImageFormat.YUV_420_888, 2);
-        mPreviewReader.setOnImageAvailableListener(mOnPreviewAvailableListener, null);
+        mPreviewReader.setOnImageAvailableListener(mOnPreviewAvailableListener, mHandler);
     }
 
     /**
